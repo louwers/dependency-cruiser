@@ -1,8 +1,20 @@
 /* eslint-disable unicorn/prevent-abbreviations */
 /* eslint-disable max-lines */
 /* eslint-disable no-inline-comments */
+import { glob } from "node:fs/promises";
 import tryImport from "#utl/try-import.mjs";
 import meta from "#meta.cjs";
+
+
+const jsFiles = new Set(
+  await Array.fromAsync(
+    glob("**/*.js", {
+      exclude: (pFile) => {
+        return pFile.endsWith("node_modules");
+      },
+    }),
+  ),
+);
 
 /** @type {import("typescript")} */
 const typescript = await tryImport(
@@ -241,6 +253,16 @@ function isDynamicImportExpression(pASTNode) {
   );
 }
 
+function isStringReferenceToFile(pASTNode) {
+  return (
+    pASTNode &&
+    (typescript.SyntaxKind[pASTNode.kind] === "StringLiteral" ||
+      typescript.SyntaxKind[pASTNode.kind] === "FirstTemplateToken") &&
+    typeof pASTNode.text === "string" &&
+    jsFiles.has(pASTNode.text.slice(1))
+  );
+}
+
 function isTypeImport(pASTNode) {
   return (
     typescript.SyntaxKind[pASTNode.kind] === "LastTypeNode" &&
@@ -316,6 +338,16 @@ function walk(pResult, pExoticRequireStrings, pDetectJSDocImports) {
     if (isDynamicImportExpression(pASTNode)) {
       pResult.push({
         module: pASTNode.arguments[0].text,
+        moduleSystem: "es6",
+        dynamic: true,
+        exoticallyRequired: false,
+        dependencyTypes: ["dynamic-import"],
+      });
+    }
+
+    if (isStringReferenceToFile(pASTNode)) {
+      pResult.push({
+        module: pASTNode.text,
         moduleSystem: "es6",
         dynamic: true,
         exoticallyRequired: false,
